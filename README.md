@@ -68,6 +68,7 @@ topk-site/                    Vercel project (static + serverless)
     count.js                  GET  /api/count -> subscriber count
     latest.js                 GET  /api/latest -> 302 redirect to today's brief
     update-latest.js          POST /api/update-latest -> store URL in Redis
+    checkpoint.js             GET/POST /api/checkpoint -> pipeline progress log
 ```
 
 ### How the pieces connect

@@ -125,6 +125,14 @@ curl -X POST https://your-domain.com/api/update-latest \
 
 The stored URL has a 48-hour TTL, so stale briefs clear automatically if a run is skipped.
 
+## Step 5b — Pipeline checkpoint monitoring (optional)
+
+The `/api/checkpoint` endpoint lets the daily pipeline report and retrieve progress:
+
+- **POST** — report a checkpoint: `{ run: "2025-01-15T07", phase: "gather", status: "ok", detail: "40/42 sources fetched" }`. Authenticated with `UPDATE_SECRET`.
+- **GET** — retrieve the full checkpoint log for a run: `/api/checkpoint?run=2025-01-15T07`. Defaults to the most recent run. Returns `count`, `lastPhase`, `lastStatus`, and `secondsSinceLastCheckpoint`.
+- Checkpoints are stored in Upstash Redis with a 3-day TTL.
+
 ---
 
 ## Project structure
@@ -138,6 +146,7 @@ The stored URL has a 48-hour TTL, so stale briefs clear automatically if a run i
        count.js          ← Serverless: GET subscriber count
        latest.js         ← Serverless: GET /api/latest → 302 redirect to latest brief
        updatelatest.js   ← Serverless: POST /api/update-latest → store brief URL in Upstash Redis
+       checkpoint.js     ← Serverless: GET/POST /api/checkpoint → pipeline progress log
      vercel.json         ← Routing config
      package.json
    ```
