@@ -4,9 +4,11 @@ Everything you need to get topk running on your own domain.
 
 ## What you're deploying
 
-A static landing page with two serverless API routes:
+A static landing page with four serverless API routes:
 - `/api/subscribe` — adds an email to your MailerLite subscriber list
 - `/api/count` — returns the current subscriber count (cached 60s)
+- `/api/latest` — redirects to the latest published Top-K brief (302)
+- `/api/update-latest` — POST: stores the latest brief URL/summary in Upstash Redis
 
 Total infra cost: **$0/month** on free tiers (until you exceed 1,000 MailerLite subscribers or Vercel's hobby limits).
 
@@ -23,6 +25,19 @@ Total infra cost: **$0/month** on free tiers (until you exceed 1,000 MailerLite 
 Save these for Step 3:
 - `MAILERLITE_API_KEY` — the token you just generated
 - `MAILERLITE_GROUP_ID` — the group ID (optional but recommended)
+
+## Step 1b — Set up Upstash Redis (5 min, for latest brief routing)
+
+The `/api/latest` and `/api/update-latest` routes use Upstash Redis (pay-as-you-go, generous free tier) to store the URL of the most recent Top-K brief.
+
+1. Go to [upstash.com](https://upstash.com/) and sign up (free tier is plenty)
+2. Create a Redis database (REST API enabled)
+3. Copy the `REST URL` and `REST TOKEN`
+
+Save these for Step 3:
+- `UPSTASH_REDIS_REST_URL` — the Upstash REST endpoint
+- `UPSTASH_REDIS_REST_TOKEN` — the Upstash REST token
+- `UPDATE_SECRET` — a shared secret string used to authenticate the daily update task (see Step 5)
 
 ---
 
@@ -68,6 +83,9 @@ In the Vercel dashboard:
 2. Add:
    - `MAILERLITE_API_KEY` = your API token from Step 1
    - `MAILERLITE_GROUP_ID` = your group ID from Step 1 (optional)
+   - `UPSTASH_REDIS_REST_URL` = your Upstash REST URL from Step 1b
+   - `UPSTASH_REDIS_REST_TOKEN` = your Upstash REST token from Step 1b
+   - `UPDATE_SECRET` = a shared secret string for authenticating the daily update task (see Step 5)
 3. Click **Save**
 4. Go to **Deployments** → click the three dots on the latest deployment → **Redeploy**
 
@@ -90,20 +108,39 @@ In the Vercel dashboard:
 3. Check your MailerLite dashboard → **Subscribers** — the email should appear
 4. The subscriber count on the page should update within 60 seconds
 
+## Step 5 — Update the daily brief link (for the scheduled task)
+
+The "See today's brief" link on the landing page points to `/api/latest`, which:
+- Returns the latest brief URL stored in Upstash Redis (set by `/api/update-latest`)
+- Falls back to the example brief if no URL is stored yet
+
+After each daily Top-K publishing run, call `/api/update-latest` to update the link:
+
+```
+curl -X POST https://your-domain.com/api/update-latest \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_UPDATE_SECRET" \
+  -d '{"url":"https://claude.ai/code/artifact/...","summary":"Today's brief: ...","date":"2025-01-15"}'
+```
+
+The stored URL has a 48-hour TTL, so stale briefs clear automatically if a run is skipped.
+
 ---
 
 ## Project structure
 
-```
-topk-site/
-  public/
-    index.html        ← Landing page (all HTML/CSS/JS in one file)
-  api/
-    subscribe.js      ← Serverless: POST email → MailerLite
-    count.js          ← Serverless: GET subscriber count
-  vercel.json         ← Routing config
-  package.json
-```
+   ```
+   topk-site/
+     public/
+       index.html        ← Landing page (all HTML/CSS/JS in one file)
+     api/
+       subscribe.js      ← Serverless: POST email → MailerLite
+       count.js          ← Serverless: GET subscriber count
+       latest.js         ← Serverless: GET /api/latest → 302 redirect to latest brief
+       updatelatest.js   ← Serverless: POST /api/update-latest → store brief URL in Upstash Redis
+     vercel.json         ← Routing config
+     package.json
+   ```
 
 ---
 
