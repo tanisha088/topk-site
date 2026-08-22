@@ -111,13 +111,14 @@ In the Vercel dashboard:
 ## Step 5 — Update the daily brief link (for the scheduled task)
 
 The "See today's brief" link on the landing page points to `/api/latest`, which:
-- Returns the latest brief URL stored in Upstash Redis (set by `/api/update-latest`)
+- Returns the latest brief URL stored in Upstash Redis (set by POSTing to `/api/latest`)
 - Falls back to the example brief if no URL is stored yet
+- Supports `?peek=1` to return the stored record as JSON (for verification without redirecting)
 
-After each daily Top-K publishing run, call `/api/update-latest` to update the link:
+After each daily Top-K publishing run, call `/api/latest` (POST) to update the link:
 
 ```
-curl -X POST https://your-domain.com/api/update-latest \
+curl -X POST https://your-domain.com/api/latest \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_UPDATE_SECRET" \
   -d '{"url":"https://claude.ai/code/artifact/...","summary":"Today's brief: ...","date":"2025-01-15"}'
@@ -144,8 +145,7 @@ The `/api/checkpoint` endpoint lets the daily pipeline report and retrieve progr
      api/
        subscribe.js      ← Serverless: POST email → MailerLite
        count.js          ← Serverless: GET subscriber count
-       latest.js         ← Serverless: GET /api/latest → 302 redirect to latest brief
-       updatelatest.js   ← Serverless: POST /api/update-latest → store brief URL in Upstash Redis
+       latest.js         ← Serverless: GET/POST /api/latest → redirect to latest brief or set latest brief
        checkpoint.js     ← Serverless: GET/POST /api/checkpoint → pipeline progress log
      vercel.json         ← Routing config
      package.json

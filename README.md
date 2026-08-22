@@ -66,8 +66,7 @@ topk-site/                    Vercel project (static + serverless)
   api/
     subscribe.js              POST /api/subscribe -> MailerLite
     count.js                  GET  /api/count -> subscriber count
-    latest.js                 GET  /api/latest -> 302 redirect to today's brief
-    update-latest.js          POST /api/update-latest -> store URL in Redis
+    latest.js                 GET/POST /api/latest -> redirect to latest brief / set latest brief
     checkpoint.js             GET/POST /api/checkpoint -> pipeline progress log
 ```
 
@@ -88,14 +87,14 @@ topk-site/                    Vercel project (static + serverless)
               |             |             |
               +------+------+             |
                      |                    |
-              POST /api/update-latest     |
-              (stores brief URL           |
-               in Upstash Redis)          |
-                     |                    |
-                     v                    v
-              GET /api/latest       Subscribers'
-              302 -> today's        inboxes
-              brief URL
+               POST /api/latest          |
+               (stores brief URL         |
+                in Upstash Redis)        |
+                      |                    |
+                      v                    v
+               GET /api/latest       Subscribers'
+               302 -> today's        inboxes
+               brief URL
 ```
 
 ### External services
