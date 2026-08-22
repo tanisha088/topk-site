@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Top-K — Daily AI Brief for Builders</title>
+  <meta name="description" content="A daily AI brief built for engineers and PMs who ship with AI models. Headlines, deep-dives, and honest coverage notes every morning.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Martian+Mono:wght@400;600;800&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root{--paper:#F3F5F7;--paper-raised:#FFFFFF;--ink:#1A1C20;--ink-dim:#5B6067;--ink-faint:#8B9098;--line:#DBE0E4;--line-strong:#C3C9CE;--accent:#B9791A;--accent-strong:#8F5B10;--accent-tint:#FBEED9;--good:#2E7D6B;--shadow:0 1px 2px rgba(20,22,26,.04),0 8px 24px rgba(20,22,26,.05)}
+    @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--paper:#15171B;--paper-raised:#1C1F24;--ink:#E9EBED;--ink-dim:#A2A8AF;--ink-faint:#6C7178;--line:#2A2E34;--line-strong:#383D44;--accent:#EFAE3E;--accent-strong:#F4C263;--accent-tint:#362A13;--good:#57B39D;--shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35)}}
+    :root[data-theme="dark"]{--paper:#15171B;--paper-raised:#1C1F24;--ink:#E9EBED;--ink-dim:#A2A8AF;--ink-faint:#6C7178;--line:#2A2E34;--line-strong:#383D44;--accent:#EFAE3E;--accent-strong:#F4C263;--accent-tint:#362A13;--good:#57B39D;--shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35)}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--paper);color:var(--ink);font-family:"Public Sans",ui-sans-serif,system-ui,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased}
+    a{color:var(--accent-strong)}
+    a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+    .page{max-width:720px;margin:0 auto;padding:64px 24px 80px}
+
+    .eyebrow{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint)}
+    .wordmark{font-family:"Martian Mono",ui-monospace,monospace;font-weight:800;font-size:clamp(2.6rem,8vw,4rem);line-height:1;margin:10px 0 20px}
+    .wordmark span{color:var(--accent)}
+
+    .lede{font-size:1.15rem;color:var(--ink-dim);max-width:56ch;text-wrap:balance;margin:0 0 36px}
+    .lede strong{color:var(--ink);font-weight:600}
+
+    .distribution{display:flex;align-items:flex-end;gap:4px;height:40px;margin-bottom:40px}
+    .distribution .bar{width:9px;background:var(--line-strong);border-radius:1px 1px 0 0}
+    .distribution .bar.kept{background:var(--accent)}
+    .distribution .cutoff{width:1px;height:48px;background:var(--accent);opacity:.5;align-self:flex-end;margin:0 2px}
+
+    .subscribe{background:var(--paper-raised);border:1px solid var(--line);border-radius:8px;padding:28px clamp(20px,4vw,32px);box-shadow:var(--shadow);margin-bottom:40px}
+    .subscribe h2{font-size:1.05rem;margin:0 0 6px}
+    .subscribe .sub{font-size:.88rem;color:var(--ink-dim);margin:0 0 18px}
+
+    form{display:flex;gap:10px;flex-wrap:wrap}
+    input[type=email]{flex:1 1 240px;font:inherit;font-size:.95rem;padding:11px 14px;border:1px solid var(--line-strong);border-radius:5px;background:var(--paper);color:var(--ink)}
+    input[type=email]::placeholder{color:var(--ink-faint)}
+
+    button.cta{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.82rem;font-weight:600;letter-spacing:.02em;padding:11px 20px;border-radius:5px;border:none;background:var(--accent);color:#1A1400;cursor:pointer;transition:background .15s}
+    button.cta:hover{background:var(--accent-strong);color:#fff}
+    button.cta:disabled{opacity:.55;cursor:default}
+
+    .form-note{font-size:.78rem;color:var(--ink-faint);margin-top:10px}
+    .form-error{font-size:.82rem;color:#A6461E;margin-top:10px;display:none}
+    .form-success{display:none;align-items:center;gap:10px;font-size:.95rem}
+    .form-success .dot{width:8px;height:8px;border-radius:50%;background:var(--good);flex:none}
+
+    .count-row{display:flex;align-items:baseline;gap:8px;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.8rem;color:var(--ink-faint);margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+    .count-row .n{color:var(--ink);font-weight:600;font-size:.95rem}
+
+    .hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden}
+
+    .features{margin-bottom:44px}
+    .feature{display:grid;grid-template-columns:100px 1fr;gap:4px 20px;padding:16px 0;border-bottom:1px solid var(--line)}
+    .feature:first-child{border-top:1px solid var(--line)}
+    .feature .tag{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-strong);padding-top:2px}
+    .feature p{margin:0;color:var(--ink-dim);font-size:.93rem;max-width:52ch}
+    .feature p strong{color:var(--ink)}
+
+    .example-link{display:inline-flex;align-items:center;gap:8px;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.85rem;text-decoration:none;border-bottom:1px solid var(--line-strong);padding-bottom:2px;margin-bottom:44px}
+    .example-link:hover{border-color:var(--accent);color:var(--accent-strong)}
+
+    footer{padding-top:24px;border-top:1px solid var(--line);font-size:.82rem;color:var(--ink-faint);max-width:56ch}
+    footer p{margin:0 0 8px}
+
+    @media (max-width:480px){
+      .feature{grid-template-columns:1fr}
+      form{flex-direction:column;align-items:stretch}
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="eyebrow">Daily &middot; 7:00am IST</div>
+    <div class="wordmark">TOP<span>&middot;</span>K</div>
+    <p class="lede">A daily AI brief built for people who <strong>ship</strong> with AI models &mdash; engineers and PMs, not researchers. Every morning: what changed in your stack, what's worth reading, and one or two things explained properly instead of just reported.</p>
+
+    <div class="distribution" aria-hidden="true">
+      <div class="bar kept" style="height:40px"></div>
+      <div class="bar kept" style="height:32px"></div>
+      <div class="bar kept" style="height:25px"></div>
+      <div class="bar kept" style="height:19px"></div>
+      <div class="cutoff"></div>
+      <div class="bar" style="height:13px"></div>
+      <div class="bar" style="height:9px"></div>
+      <div class="bar" style="height:6px"></div>
+      <div class="bar" style="height:4px"></div>
+    </div>
+
+    <div class="subscribe">
+      <h2>Get on the list</h2>
+      <p class="sub">Early access &mdash; one email a day, worth opening.</p>
+
+      <form id="signup-form" autocomplete="off">
+        <input type="email" id="email-input" placeholder="you@company.com" required>
+        <input type="text" name="company" class="hp" tabindex="-1" autocomplete="off">
+        <button type="submit" class="cta" id="submit-btn">Subscribe</button>
+      </form>
+
+      <div class="form-error" id="form-error"></div>
+      <p class="form-note">No spam, nothing shared. One email a day, or none on a quiet day.</p>
+
+      <div class="form-success" id="form-success">
+        <span class="dot"></span>
+        <span>You're on the list. First brief lands next weekday morning.</span>
+      </div>
+
+      <div class="count-row">
+        <span class="n" id="signup-count">&hellip;</span>
+        <span id="count-label">builders on the list</span>
+      </div>
+    </div>
+
+    <div class="features">
+      <div class="feature">
+        <span class="tag">Sources</span>
+        <p><strong>Aggregation-first, not lab-blog-first.</strong> Built on the daily digests, analysts, and paper-consolidators who already do the reading &mdash; cross-checked, not scraped from a single feed.</p>
+      </div>
+      <div class="feature">
+        <span class="tag">Depth</span>
+        <p><strong>Headlines plus real deep-dives.</strong> One or two stories each day get the full treatment &mdash; what happened, the background you need, why it matters, what to watch.</p>
+      </div>
+      <div class="feature">
+        <span class="tag">Honesty</span>
+        <p><strong>A coverage note, every day.</strong> If a source had nothing, or a fetch failed, the brief says so &mdash; no padding a slow day with recycled news.</p>
+      </div>
+    </div>
+
+    <a class="example-link" href="https://claude.ai/code/artifact/469ce2ab-4333-44b4-b2d7-6adb16368eba" target="_blank" rel="noopener">&rarr; See an example brief</a>
+
+    <footer>
+      <p>Your email is used only to send you this brief. No third parties, no resale.</p>
+      <p>Built by one person, for builders.</p>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      var form = document.getElementById('signup-form');
+      var input = document.getElementById('email-input');
+      var btn = document.getElementById('submit-btn');
+      var errorEl = document.getElementById('form-error');
+      var successEl = document.getElementById('form-success');
+      var countEl = document.getElementById('signup-count');
+      var countLabel = document.getElementById('count-label');
+      var hp = form.querySelector('.hp');
+
+      // Fetch live subscriber count
+      fetch('/api/count')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.count != null) {
+            countEl.textContent = d.count;
+            countLabel.textContent = d.count === 1 ? 'builder on the list' : 'builders on the list';
+          }
+        })
+        .catch(function () {
+          countEl.textContent = '—';
+        });
+
+      var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        errorEl.style.display = 'none';
+
+        // Honeypot
+        if (hp.value) return;
+
+        var email = input.value.trim().toLowerCase();
+        if (!EMAIL_RE.test(email)) {
+          errorEl.textContent = "That doesn't look like a valid email — mind checking it?";
+          errorEl.style.display = 'block';
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Adding you…';
+
+        fetch('/api/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: email })
+        })
+          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+          .then(function (res) {
+            if (res.ok) {
+              form.style.display = 'none';
+              successEl.style.display = 'flex';
+              // Update count
+              if (res.data.count != null) {
+                countEl.textContent = res.data.count;
+                countLabel.textContent = res.data.count === 1 ? 'builder on the list' : 'builders on the list';
+              }
+            } else if (res.data.code === 'already_subscribed') {
+              form.style.display = 'none';
+              successEl.style.display = 'flex';
+              successEl.querySelector('span:last-child').textContent = "You're already on the list.";
+            } else {
+              errorEl.textContent = res.data.message || "Couldn't save that just now — mind trying again?";
+              errorEl.style.display = 'block';
+              btn.disabled = false;
+              btn.textContent = 'Subscribe';
+            }
+          })
+          .catch(function () {
+            errorEl.textContent = "Couldn't reach the server — mind trying again in a moment?";
+            errorEl.style.display = 'block';
+            btn.disabled = false;
+            btn.textContent = 'Subscribe';
+          });
+      });
+    })();
+  </script>
+</body>
+</html>
