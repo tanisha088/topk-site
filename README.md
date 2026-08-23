@@ -111,6 +111,7 @@ topk-site/                    Vercel project (static + serverless)
                                   POST /api/latest -> direct one-shot upload
                                   GET  /api/latest?chunk=1 / ?finish=1 -> chunked upload fallback
                                   GET  /api/latest?peek=1 -> metadata only, for verification
+                                  GET  /api/latest?patch=1 -> server-side find/replace on the live brief
     checkpoint.js               GET  /api/checkpoint -> pipeline run history
                                   GET  /api/checkpoint?phase=... -> write a checkpoint
 ```

@@ -140,6 +140,13 @@ curl "https://your-domain.com/api/latest?peek=1"
 
 Pending uploads have a 1-hour TTL, so abandoned chunk sequences clear automatically.
 
+**Patch (correct a typo or wrong date in the live brief):**
+```
+curl "https://your-domain.com/api/latest?patch=1&find=Januray&replace=January&token=YOUR_UPDATE_SECRET"
+# Returns: { "ok": true, "replacements": 2, "bytes": 8423 }
+```
+Use `all=1` to replace every occurrence; omit it to replace only the first. If `find` isn't present, the response returns `replacements: 0` (no-op, not an error).
+
 ## Step 5b — Pipeline checkpoint monitoring (optional)
 
 The `/api/checkpoint` endpoint lets the daily pipeline report and retrieve progress:
@@ -160,7 +167,7 @@ The `/api/checkpoint` endpoint lets the daily pipeline report and retrieve progr
      api/
        subscribe.js      ← Serverless: POST email → MailerLite
        count.js          ← Serverless: GET subscriber count
-        latest.js         ← Serverless: GET /api/latest → serve brief HTML + chunked upload
+        latest.js         ← Serverless: GET/POST /api/latest → serve brief HTML + chunked/POST upload + patch
         checkpoint.js     ← Serverless: GET/POST /api/checkpoint → pipeline progress log
      vercel.json         ← Routing config
      package.json

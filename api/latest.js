@@ -33,6 +33,15 @@
 //   GET-only relay). The chunk/finish path above remains as a fallback
 //   for environments that can only do GET.
 //
+// GET (patch):        /api/latest?patch=1&token=...&find=...&replace=...&all=1
+//   Server-side literal find/replace against the currently stored brief
+//   HTML — for small corrections (a typo, a wrong date) without moving
+//   the whole document back out through a fetch tool that might
+//   summarize/mangle it. `find`/`replace` are short plain strings, well
+//   under any URL-length constraint. `all=1` replaces every occurrence;
+//   omit it to replace only the first. Returns how many replacements
+//   were made; 0 means `find` wasn't present (no-op, not an error).
+//
 // Env vars: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, UPDATE_SECRET
 
 const TTL_SECONDS = 172800; // 48h
@@ -112,6 +121,58 @@ export default async function handler(req, res) {
     } catch (err) {
       console.error('Direct set error:', err);
       return res.status(502).json({ message: 'Could not store brief.', detail: String(err) });
+    }
+  }
+
+  // ---------- patch: server-side literal find/replace ----------
+  if (req.query.patch) {
+    res.setHeader('Content-Type', 'application/json');
+    if (!checkAuth(req)) return res.status(401).json({ message: 'Unauthorized' });
+
+    const { find, replace, all } = req.query;
+    if (!find) return res.status(400).json({ message: 'find is required' });
+    const replacement = replace === undefined ? '' : replace;
+
+    try {
+      const [{ result: html }] = await redisPipeline(cfg, [['GET', 'topk:latest:html']]);
+      if (!html) return res.status(400).json({ message: 'No brief currently stored.' });
+
+      let count = 0;
+      let patched;
+      if (all) {
+        patched = html.split(find).join(replacement);
+        count = patched === html ? 0 : (html.split(find).length - 1);
+      } else {
+        const idx = html.indexOf(find);
+        if (idx === -1) {
+          patched = html;
+          count = 0;
+        } else {
+          patched = html.slice(0, idx) + replacement + html.slice(idx + find.length);
+          count = 1;
+        }
+      }
+
+      if (count === 0) {
+        return res.status(200).json({ ok: true, replacements: 0, message: 'find string not present; no change made.' });
+      }
+
+      const [{ result: metaRaw }] = await redisPipeline(cfg, [['GET', 'topk:latest:meta']]);
+      let meta = {};
+      try { meta = metaRaw ? JSON.parse(metaRaw) : {}; } catch { meta = {}; }
+      meta.length = patched.length;
+      meta.updatedAt = new Date().toISOString();
+      meta.patchedAt = meta.updatedAt;
+
+      await redisPipeline(cfg, [
+        ['SET', 'topk:latest:html', patched, 'EX', String(TTL_SECONDS)],
+        ['SET', 'topk:latest:meta', JSON.stringify(meta), 'EX', String(TTL_SECONDS)]
+      ]);
+
+      return res.status(200).json({ ok: true, replacements: count, bytes: patched.length });
+    } catch (err) {
+      console.error('Patch error:', err);
+      return res.status(502).json({ message: 'Could not patch brief.', detail: String(err) });
     }
   }
 
