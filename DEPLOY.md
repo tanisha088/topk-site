@@ -108,29 +108,31 @@ In the Vercel dashboard:
 3. Check your MailerLite dashboard → **Subscribers** — the email should appear
 4. The subscriber count on the page should update within 60 seconds
 
-## Step 5 — Update the daily brief link (for the scheduled task)
+## Step 5 — Publish the daily brief (for the scheduled task)
 
-The "See today's brief" link on the landing page points to `/api/latest`, which:
-- Returns the latest brief URL stored in Upstash Redis (set by POSTing or GET-`?set=1` to `/api/latest`)
-- Falls back to the example brief if no URL is stored yet
-- Supports `?peek=1` to return the stored record as JSON (for verification without redirecting)
+The landing page "See today's brief" link points to `/api/latest`, which now **serves the brief HTML directly** (no redirect) — this is necessary because Claude artifacts are private by default and would need manual re-sharing every day.
 
-The daily pipeline can update the link via either POST or GET (query-string), because the pipeline environment can only make tool-mediated GET fetches, not raw outbound POSTs:
+The daily pipeline uploads the brief HTML via a **chunked GET-based transfer** (the pipeline environment can only make tool-mediated GET fetches, not raw outbound POSTs):
 
-**POST (preferred, secret in header):**
+**1. Upload each chunk:**
 ```
-curl -X POST https://your-domain.com/api/latest \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_UPDATE_SECRET" \
-  -d '{"url":"https://claude.ai/code/artifact/...","summary":"Today's brief: ...","date":"2025-01-15"}'
+curl "https://your-domain.com/api/latest?chunk=1&run=2025-01-15T07&idx=0&data=BASE64URL_ENCODED_DATA&token=YOUR_UPDATE_SECRET"
+```
+Each chunk appends base64url-encoded bytes to a pending upload list keyed by `run`. Chunks use base64url encoding so multi-byte UTF-8 characters split across boundaries still decode correctly.
+
+**2. Assemble and publish:**
+```
+curl "https://your-domain.com/api/latest?finish=1&run=2025-01-15T07&summary=Today's+brief+summary&date=2025-01-15&sourceArtifact=https://claude.ai/code/artifact/...&token=YOUR_UPDATE_SECRET"
+```
+This concatenates all chunks, decodes to HTML, stores as `topk:latest:html` (48h TTL) and metadata as `topk:latest:meta`, and clears the chunk buffer.
+
+**Verify:**
+```
+curl "https://your-domain.com/api/latest?peek=1"
+# Returns: { "stored": true, "date": "2025-01-15", "summary": "...", "length": 8421, ... }
 ```
 
-**GET (query-string — secret exposed in URL):**
-```
-curl "https://your-domain.com/api/latest?set=1&token=YOUR_UPDATE_SECRET&url=https://claude.ai/code/artifact/...&summary=Today%27s%20brief&date=2025-01-15"
-```
-
-The stored URL has a 48-hour TTL, so stale briefs clear automatically if a run is skipped.
+Pending uploads have a 1-hour TTL, so abandoned chunk sequences clear automatically.
 
 ## Step 5b — Pipeline checkpoint monitoring (optional)
 
@@ -152,8 +154,8 @@ The `/api/checkpoint` endpoint lets the daily pipeline report and retrieve progr
      api/
        subscribe.js      ← Serverless: POST email → MailerLite
        count.js          ← Serverless: GET subscriber count
-       latest.js         ← Serverless: GET/POST /api/latest → redirect to latest brief or set latest brief
-       checkpoint.js     ← Serverless: GET/POST /api/checkpoint → pipeline progress log
+        latest.js         ← Serverless: GET /api/latest → serve brief HTML + chunked upload
+        checkpoint.js     ← Serverless: GET/POST /api/checkpoint → pipeline progress log
      vercel.json         ← Routing config
      package.json
    ```

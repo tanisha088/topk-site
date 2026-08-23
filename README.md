@@ -38,12 +38,11 @@ Every item must answer: *"Does this change what I build, what it costs, or what 
 
 3. Welcome
    MailerLite automation sends a welcome email with a link
-   to the latest brief (/api/latest -> today's artifact)
+    to the latest brief (/api/latest — HTML served directly, no redirect)
 
 4. Daily delivery (7:00am IST)
    Automated task fires -> gathers from 40+ sources ->
-   synthesizes -> publishes interactive brief page ->
-   updates /api/latest redirect -> emails brief to all subscribers
+    synthesizes -> uploads interactive brief HTML via /api/latest (chunked) -> emails brief to all subscribers
 
 5. Read
    Subscriber opens email -> reads inline headlines + deep-dives
@@ -66,8 +65,8 @@ topk-site/                    Vercel project (static + serverless)
   api/
     subscribe.js              POST /api/subscribe -> MailerLite
     count.js                  GET  /api/count -> subscriber count
-    latest.js                 GET/POST /api/latest -> redirect to latest brief / set latest brief (GET or POST)
-    checkpoint.js             GET/POST /api/checkpoint -> pipeline progress log (GET or POST)
+    latest.js                 GET /api/latest → serve brief HTML + chunked upload (GET-only)
+    checkpoint.js             GET/POST /api/checkpoint → pipeline progress log (GET or POST)
 ```
 
 ### How the pieces connect
@@ -85,16 +84,20 @@ topk-site/                    Vercel project (static + serverless)
         40+ sources    Interactive   Email via
         via web        brief page    MailerLite
               |             |             |
-              +------+------+             |
-                     |                    |
-                GET|POST /api/latest     |
-               (stores brief URL         |
-                in Upstash Redis)        |
+               +------+------+             |
+               |  Chunk   |         |
+               |  Upload   |         |
+               |  GET     |         |
+               |  ?chunk  |         |
                       |                    |
-                      v                    v
-               GET /api/latest       Subscribers'
-               302 -> today's        inboxes
-               brief URL
+               |  Assemble &         |
+               |  Store (GET         |
+               |  ?finish -> Redis)  |
+                      |                    |
+               GET /api/latest      Subscribers'
+               serves HTML         inboxes
+               directly           (email links
+                                  to /api/latest)
 ```
 
 ### External services
@@ -103,7 +106,7 @@ topk-site/                    Vercel project (static + serverless)
 |---------|---------|-----------|
 | **Vercel** | Hosting + serverless functions | Hobby plan (sufficient) |
 | **MailerLite** | Subscriber management + email delivery | Up to 1,000 subscribers |
-| **Upstash Redis** | Store the latest brief URL for `/api/latest` | 10,000 commands/day |
+| **Upstash Redis** | Store the latest brief HTML + metadata for `/api/latest` | 10,000 commands/day |
 | **Automated scheduled task** | Daily content generation pipeline | Runs on a cron schedule |
 
 ### Environment variables (Vercel)
@@ -148,7 +151,7 @@ The brief uses a consistent visual identity across every daily edition:
 
 ## Development
 
-The site is intentionally simple — a single HTML file with inline CSS/JS, plus four serverless functions. No build step, no framework, no dependencies.
+The site is intentionally simple — a single HTML file with inline CSS/JS, plus five serverless functions. No build step, no framework, no dependencies.
 
 ```bash
 # Local preview

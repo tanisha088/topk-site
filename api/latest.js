@@ -1,26 +1,41 @@
 // Vercel Serverless Function — /api/latest
 //
-// GET (redirect):  /api/latest
-//   302-redirects to the most recent published Top-K brief.
-//   Falls back to the example brief if nothing is stored yet.
+// This route now HOSTS the brief itself, rather than redirecting to a
+// Claude artifact. Claude artifacts are private by default — a fresh
+// artifact published daily would need to be manually re-shared every
+// day for outside visitors to see it, which defeats automation. So the
+// full brief HTML is uploaded here (chunked, since only GET requests
+// are reliable from the pipeline environment) and served directly.
 //
-// GET (peek):       /api/latest?peek=1
-//   Returns the stored record as JSON instead of redirecting.
+// GET (serve):      /api/latest
+//   Serves the stored brief as text/html. Falls back to a placeholder
+//   page if nothing is stored yet.
 //
-// GET (set):        /api/latest?set=1&token=...&url=...&summary=...&date=...
-//   Updates the latest brief. Query-string GET rather than POST because
-//   the pipeline environment cannot make raw outbound POST requests —
-//   only tool-mediated GET fetches reliably reach the network there.
-//   The secret is necessarily exposed in the URL as a result; treat it
-//   as a low-stakes shared secret, not a real credential.
+// GET (peek):        /api/latest?peek=1
+//   Returns metadata (not the full HTML) as JSON: stored, date, summary,
+//   length, updatedAt, sourceArtifact.
 //
-// POST: kept as a secondary path in case a future environment can use it.
-//   Body: { url, summary, date }, Authorization: Bearer <UPDATE_SECRET>
+// GET (chunk upload): /api/latest?chunk=1&run=ID&idx=N&data=BASE64URL&token=...
+//   Appends one chunk of base64url-encoded UTF-8 bytes to a pending
+//   upload for `run`. Chunks are concatenated as raw bytes (not
+//   strings) at finish time, so multi-byte characters split across a
+//   chunk boundary are still decoded correctly.
+//
+// GET (finish):       /api/latest?finish=1&run=ID&token=...&summary=...&date=...&sourceArtifact=...
+//   Assembles all chunks for `run` into the final HTML, stores it as
+//   the live brief, and clears the chunk buffer.
 //
 // Env vars: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, UPDATE_SECRET
 
-const FALLBACK_URL = 'https://claude.ai/code/artifact/469ce2ab-4333-44b4-b2d7-6adb16368eba';
-const TTL_SECONDS = 172800; // 48h — a skipped run should not serve a stale brief forever
+const TTL_SECONDS = 172800; // 48h
+const CHUNK_TTL_SECONDS = 3600; // pending uploads expire in 1h if never finished
+
+const PLACEHOLDER_HTML = `<!doctype html><html><head><meta charset="utf-8">
+<title>Top-K — no brief yet</title></head>
+<body style="font-family:ui-sans-serif,system-ui,sans-serif;max-width:640px;margin:80px auto;padding:0 24px;color:#1A1C20">
+<h1 style="font-size:1.4rem">No brief published yet</h1>
+<p style="color:#5B6067">Today's Top-K brief hasn't been generated yet. Check back soon.</p>
+</body></html>`;
 
 function redisConfig() {
   const url = process.env.UPSTASH_REDIS_REST_URL;
@@ -42,103 +57,109 @@ async function redisPipeline(cfg, commands) {
   return r.json();
 }
 
-async function writeLatest(cfg, { url, summary, date }) {
-  const payload = JSON.stringify({
-    url: url,
-    summary: summary || '',
-    date: date || new Date().toISOString().slice(0, 10),
-    updatedAt: new Date().toISOString()
-  });
-  await redisPipeline(cfg, [
-    ['SET', 'topk:latest', payload, 'EX', String(TTL_SECONDS)]
-  ]);
+function checkAuth(req) {
+  const secret = process.env.UPDATE_SECRET;
+  return !!secret && req.query.token === secret;
 }
 
 export default async function handler(req, res) {
+  if (req.method !== 'GET') {
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(405).json({ message: 'Method not allowed' });
+  }
+
   const cfg = redisConfig();
-
-  // ---------- GET ?set=1 : update via query string (POST substitute) ----------
-  if (req.method === 'GET' && req.query && req.query.set) {
+  if (!cfg) {
     res.setHeader('Content-Type', 'application/json');
+    return res.status(500).json({ message: 'Storage not configured.' });
+  }
 
-    const secret = process.env.UPDATE_SECRET;
-    const given = req.query.token;
-    if (!secret || given !== secret) {
-      return res.status(401).json({ message: 'Unauthorized' });
-    }
-    if (!cfg) {
-      return res.status(500).json({ message: 'Storage not configured.' });
-    }
-    const url = req.query.url;
-    if (!url) {
-      return res.status(400).json({ message: 'url is required' });
-    }
+  // ---------- chunk upload ----------
+  if (req.query.chunk) {
+    res.setHeader('Content-Type', 'application/json');
+    if (!checkAuth(req)) return res.status(401).json({ message: 'Unauthorized' });
 
+    const { run, idx, data } = req.query;
+    if (!run || idx === undefined || !data) {
+      return res.status(400).json({ message: 'run, idx, and data are required' });
+    }
     try {
-      await writeLatest(cfg, { url, summary: req.query.summary, date: req.query.date });
-      return res.status(200).json({ ok: true, url: url, via: 'get-set' });
+      await redisPipeline(cfg, [
+        ['RPUSH', `topk:pending:${run}`, data],
+        ['EXPIRE', `topk:pending:${run}`, String(CHUNK_TTL_SECONDS)]
+      ]);
+      return res.status(200).json({ ok: true, run, idx: Number(idx) });
     } catch (err) {
-      console.error('Latest write error (GET):', err);
-      return res.status(502).json({ message: 'Could not store latest brief URL.' });
+      console.error('Chunk upload error:', err);
+      return res.status(502).json({ message: 'Could not store chunk.' });
     }
   }
 
-  // ---------- POST : update via JSON body (kept as secondary path) ----------
-  if (req.method === 'POST') {
+  // ---------- finish upload ----------
+  if (req.query.finish) {
     res.setHeader('Content-Type', 'application/json');
+    if (!checkAuth(req)) return res.status(401).json({ message: 'Unauthorized' });
 
-    const secret = process.env.UPDATE_SECRET;
-    const auth = req.headers['authorization'];
-    if (!secret || auth !== `Bearer ${secret}`) {
-      return res.status(401).json({ message: 'Unauthorized' });
-    }
-    if (!cfg) {
-      return res.status(500).json({ message: 'Storage not configured.' });
-    }
-    const { url, summary, date } = req.body || {};
-    if (!url) {
-      return res.status(400).json({ message: 'url is required' });
-    }
+    const { run, summary, date, sourceArtifact } = req.query;
+    if (!run) return res.status(400).json({ message: 'run is required' });
 
     try {
-      await writeLatest(cfg, { url, summary, date });
-      return res.status(200).json({ ok: true, url: url, via: 'post' });
-    } catch (err) {
-      console.error('Latest write error (POST):', err);
-      return res.status(502).json({ message: 'Could not store latest brief URL.' });
-    }
-  }
-
-  // ---------- GET : redirect to the latest brief, or peek at it ----------
-  if (req.method === 'GET') {
-    res.setHeader('Cache-Control', 'no-store');
-    const peek = req.query && req.query.peek;
-
-    if (cfg) {
-      try {
-        const [{ result }] = await redisPipeline(cfg, [['GET', 'topk:latest']]);
-        if (result) {
-          const latest = JSON.parse(result);
-          if (latest.url) {
-            if (peek) {
-              res.setHeader('Content-Type', 'application/json');
-              return res.status(200).json({ stored: true, ...latest });
-            }
-            return res.redirect(302, latest.url);
-          }
-        }
-      } catch (err) {
-        console.error('Latest read error:', err);
+      const [{ result: chunks }] = await redisPipeline(cfg, [
+        ['LRANGE', `topk:pending:${run}`, '0', '-1']
+      ]);
+      if (!chunks || chunks.length === 0) {
+        return res.status(400).json({ message: 'No chunks found for this run.' });
       }
-    }
 
-    if (peek) {
-      res.setHeader('Content-Type', 'application/json');
-      return res.status(200).json({ stored: false, fallback: FALLBACK_URL });
+      const buffers = chunks.map(c => Buffer.from(c, 'base64url'));
+      const html = Buffer.concat(buffers).toString('utf-8');
+
+      const meta = JSON.stringify({
+        summary: summary || '',
+        date: date || new Date().toISOString().slice(0, 10),
+        sourceArtifact: sourceArtifact || '',
+        length: html.length,
+        updatedAt: new Date().toISOString()
+      });
+
+      await redisPipeline(cfg, [
+        ['SET', 'topk:latest:html', html, 'EX', String(TTL_SECONDS)],
+        ['SET', 'topk:latest:meta', meta, 'EX', String(TTL_SECONDS)],
+        ['DEL', `topk:pending:${run}`]
+      ]);
+
+      return res.status(200).json({ ok: true, run, bytes: html.length });
+    } catch (err) {
+      console.error('Finish upload error:', err);
+      return res.status(502).json({ message: 'Could not assemble brief.', detail: String(err) });
     }
-    return res.redirect(302, FALLBACK_URL);
   }
 
-  res.setHeader('Content-Type', 'application/json');
-  return res.status(405).json({ message: 'Method not allowed' });
+  // ---------- peek: metadata only ----------
+  if (req.query.peek) {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const [{ result: meta }] = await redisPipeline(cfg, [['GET', 'topk:latest:meta']]);
+      if (!meta) return res.status(200).json({ stored: false });
+      return res.status(200).json({ stored: true, ...JSON.parse(meta) });
+    } catch (err) {
+      console.error('Peek error:', err);
+      return res.status(502).json({ message: 'Could not read metadata.' });
+    }
+  }
+
+  // ---------- serve the brief ----------
+  res.setHeader('Cache-Control', 'no-store');
+  try {
+    const [{ result: html }] = await redisPipeline(cfg, [['GET', 'topk:latest:html']]);
+    if (html) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return res.status(200).send(html);
+    }
+  } catch (err) {
+    console.error('Serve error:', err);
+  }
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  return res.status(200).send(PLACEHOLDER_HTML);
 }
