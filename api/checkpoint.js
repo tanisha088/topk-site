@@ -1,12 +1,14 @@
 // Vercel Serverless Function — /api/checkpoint
 //
-// POST: the daily pipeline reports progress after each phase.
-//       Authenticated with UPDATE_SECRET.
-//       Body: { run, phase, status, detail }
+// GET (write):  /api/checkpoint?run=...&phase=...&status=ok&detail=...&token=...
+//   Records one checkpoint. Query-string GET rather than POST because the
+//   pipeline environment cannot reliably make raw outbound POST requests —
+//   only tool-mediated GET fetches reach the network there.
 //
-// GET:  returns the checkpoint log for a run, so a run that dies
-//       mid-flight can be diagnosed by seeing how far it got.
-//       Query: ?run=<id>  (defaults to the most recent run)
+// GET (read):   /api/checkpoint?run=<id>   or   /api/checkpoint  (latest run)
+//   Returns the checkpoint log for a run.
+//
+// POST: kept as a secondary write path in case a future environment can use it.
 //
 // Env vars: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, UPDATE_SECRET
 
@@ -19,9 +21,6 @@ function redisConfig() {
   return { url, token };
 }
 
-// Upstash REST accepts a JSON array body for one command, and
-// /pipeline for several. Using the body form avoids URL-encoding
-// problems with arbitrary checkpoint text.
 async function redisPipeline(cfg, commands) {
   const r = await fetch(`${cfg.url}/pipeline`, {
     method: 'POST',
@@ -35,6 +34,37 @@ async function redisPipeline(cfg, commands) {
   return r.json();
 }
 
+async function writeCheckpoint(cfg, { run, phase, status, detail }) {
+  const entry = JSON.stringify({
+    phase: phase,
+    status: status || 'ok',
+    detail: detail || '',
+    at: new Date().toISOString()
+  });
+  await redisPipeline(cfg, [
+    ['SET', 'topk:run:current', String(run), 'EX', String(TTL_SECONDS)],
+    ['RPUSH', `topk:checkpoints:${run}`, entry],
+    ['EXPIRE', `topk:checkpoints:${run}`, String(TTL_SECONDS)]
+  ]);
+}
+
+async function readCheckpoints(cfg, run) {
+  let targetRun = run;
+  if (!targetRun) {
+    const [{ result: lastRun }] = await redisPipeline(cfg, [['GET', 'topk:run:current']]);
+    targetRun = lastRun;
+  }
+  if (!targetRun) return { run: null, checkpoints: [] };
+
+  const [{ result: entries }] = await redisPipeline(cfg, [
+    ['LRANGE', `topk:checkpoints:${targetRun}`, '0', '-1']
+  ]);
+  const checkpoints = (entries || []).map(function (e) {
+    try { return JSON.parse(e); } catch (_) { return { raw: e }; }
+  });
+  return { run: targetRun, checkpoints: checkpoints };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
 
@@ -43,41 +73,39 @@ export default async function handler(req, res) {
     return res.status(500).json({ message: 'Storage not configured.' });
   }
 
-  // ---------- GET: read the log ----------
+  // ---------- GET with ?phase= : write a checkpoint (query-string form) ----------
+  if (req.method === 'GET' && req.query && req.query.phase) {
+    const secret = process.env.UPDATE_SECRET;
+    if (!secret || req.query.token !== secret) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    const { run, phase, status, detail } = req.query;
+    if (!run || !phase) {
+      return res.status(400).json({ message: 'run and phase are required' });
+    }
+    try {
+      await writeCheckpoint(cfg, { run, phase, status, detail });
+      return res.status(200).json({ ok: true, via: 'get' });
+    } catch (err) {
+      console.error('Checkpoint write error (GET):', err);
+      return res.status(502).json({ message: 'Could not store checkpoint.' });
+    }
+  }
+
+  // ---------- GET (plain) : read the log ----------
   if (req.method === 'GET') {
     res.setHeader('Cache-Control', 'no-store');
     try {
-      let run = req.query.run;
-
-      if (!run) {
-        const [{ result: lastRun }] = await redisPipeline(cfg, [
-          ['GET', 'topk:run:current']
-        ]);
-        run = lastRun;
-      }
-
-      if (!run) {
-        return res.status(200).json({ run: null, checkpoints: [] });
-      }
-
-      const [{ result: entries }] = await redisPipeline(cfg, [
-        ['LRANGE', `topk:checkpoints:${run}`, '0', '-1']
-      ]);
-
-      const checkpoints = (entries || []).map(function (e) {
-        try { return JSON.parse(e); } catch (_) { return { raw: e }; }
-      });
-
-      const last = checkpoints[checkpoints.length - 1];
+      const result = await readCheckpoints(cfg, req.query.run);
+      const last = result.checkpoints[result.checkpoints.length - 1];
       const staleMs = last ? Date.now() - new Date(last.at).getTime() : null;
-
       return res.status(200).json({
-        run: run,
-        count: checkpoints.length,
+        run: result.run,
+        count: result.checkpoints.length,
         lastPhase: last ? last.phase : null,
         lastStatus: last ? last.status : null,
         secondsSinceLastCheckpoint: staleMs == null ? null : Math.round(staleMs / 1000),
-        checkpoints: checkpoints
+        checkpoints: result.checkpoints
       });
     } catch (err) {
       console.error('Checkpoint read error:', err);
@@ -85,35 +113,22 @@ export default async function handler(req, res) {
     }
   }
 
-  // ---------- POST: write a checkpoint ----------
+  // ---------- POST : write a checkpoint (JSON body, secondary path) ----------
   if (req.method === 'POST') {
     const secret = process.env.UPDATE_SECRET;
     const auth = req.headers['authorization'];
     if (!secret || auth !== `Bearer ${secret}`) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
-
     const { run, phase, status, detail } = req.body || {};
     if (!run || !phase) {
       return res.status(400).json({ message: 'run and phase are required' });
     }
-
-    const entry = JSON.stringify({
-      phase: phase,
-      status: status || 'ok',
-      detail: detail || '',
-      at: new Date().toISOString()
-    });
-
     try {
-      await redisPipeline(cfg, [
-        ['SET', 'topk:run:current', String(run), 'EX', String(TTL_SECONDS)],
-        ['RPUSH', `topk:checkpoints:${run}`, entry],
-        ['EXPIRE', `topk:checkpoints:${run}`, String(TTL_SECONDS)]
-      ]);
-      return res.status(200).json({ ok: true });
+      await writeCheckpoint(cfg, { run, phase, status, detail });
+      return res.status(200).json({ ok: true, via: 'post' });
     } catch (err) {
-      console.error('Checkpoint write error:', err);
+      console.error('Checkpoint write error (POST):', err);
       return res.status(502).json({ message: 'Could not store checkpoint.' });
     }
   }

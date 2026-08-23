@@ -111,17 +111,23 @@ In the Vercel dashboard:
 ## Step 5 — Update the daily brief link (for the scheduled task)
 
 The "See today's brief" link on the landing page points to `/api/latest`, which:
-- Returns the latest brief URL stored in Upstash Redis (set by POSTing to `/api/latest`)
+- Returns the latest brief URL stored in Upstash Redis (set by POSTing or GET-`?set=1` to `/api/latest`)
 - Falls back to the example brief if no URL is stored yet
 - Supports `?peek=1` to return the stored record as JSON (for verification without redirecting)
 
-After each daily Top-K publishing run, call `/api/latest` (POST) to update the link:
+The daily pipeline can update the link via either POST or GET (query-string), because the pipeline environment can only make tool-mediated GET fetches, not raw outbound POSTs:
 
+**POST (preferred, secret in header):**
 ```
 curl -X POST https://your-domain.com/api/latest \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_UPDATE_SECRET" \
   -d '{"url":"https://claude.ai/code/artifact/...","summary":"Today's brief: ...","date":"2025-01-15"}'
+```
+
+**GET (query-string — secret exposed in URL):**
+```
+curl "https://your-domain.com/api/latest?set=1&token=YOUR_UPDATE_SECRET&url=https://claude.ai/code/artifact/...&summary=Today%27s%20brief&date=2025-01-15"
 ```
 
 The stored URL has a 48-hour TTL, so stale briefs clear automatically if a run is skipped.
@@ -130,8 +136,9 @@ The stored URL has a 48-hour TTL, so stale briefs clear automatically if a run i
 
 The `/api/checkpoint` endpoint lets the daily pipeline report and retrieve progress:
 
-- **POST** — report a checkpoint: `{ run: "2025-01-15T07", phase: "gather", status: "ok", detail: "40/42 sources fetched" }`. Authenticated with `UPDATE_SECRET`.
-- **GET** — retrieve the full checkpoint log for a run: `/api/checkpoint?run=2025-01-15T07`. Defaults to the most recent run. Returns `count`, `lastPhase`, `lastStatus`, and `secondsSinceLastCheckpoint`.
+- **GET (write)** — report a checkpoint: `/api/checkpoint?run=2025-01-15T07&phase=gather&status=ok&detail=40/42+fetched&token=YOUR_UPDATE_SECRET`. Uses query-string because the pipeline environment can only make tool-mediated GET fetches.
+- **POST (write)** — same as above but with JSON body and `Authorization: Bearer` header.
+- **GET (read)** — retrieve the full checkpoint log for a run: `/api/checkpoint?run=2025-01-15T07`. Defaults to the most recent run. Returns `count`, `lastPhase`, `lastStatus`, and `secondsSinceLastCheckpoint`.
 - Checkpoints are stored in Upstash Redis with a 3-day TTL.
 
 ---

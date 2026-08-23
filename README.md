@@ -66,8 +66,8 @@ topk-site/                    Vercel project (static + serverless)
   api/
     subscribe.js              POST /api/subscribe -> MailerLite
     count.js                  GET  /api/count -> subscriber count
-    latest.js                 GET/POST /api/latest -> redirect to latest brief / set latest brief
-    checkpoint.js             GET/POST /api/checkpoint -> pipeline progress log
+    latest.js                 GET/POST /api/latest -> redirect to latest brief / set latest brief (GET or POST)
+    checkpoint.js             GET/POST /api/checkpoint -> pipeline progress log (GET or POST)
 ```
 
 ### How the pieces connect
@@ -87,7 +87,7 @@ topk-site/                    Vercel project (static + serverless)
               |             |             |
               +------+------+             |
                      |                    |
-               POST /api/latest          |
+                GET|POST /api/latest     |
                (stores brief URL         |
                 in Upstash Redis)        |
                       |                    |
