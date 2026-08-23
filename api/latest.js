@@ -25,6 +25,14 @@
 //   Assembles all chunks for `run` into the final HTML, stores it as
 //   the live brief, and clears the chunk buffer.
 //
+// POST (direct set):  /api/latest?token=...&summary=...&date=...&sourceArtifact=...
+//   Body: raw HTML (text/plain or text/html), UTF-8. Stores it as the
+//   live brief in one request — no chunking. Use this from any
+//   environment that can make a normal outbound POST (e.g. the daily
+//   pipeline's own session, which has full network access, unlike a
+//   GET-only relay). The chunk/finish path above remains as a fallback
+//   for environments that can only do GET.
+//
 // Env vars: UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, UPDATE_SECRET
 
 const TTL_SECONDS = 172800; // 48h
@@ -63,7 +71,7 @@ function checkAuth(req) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET') {
+  if (req.method !== 'GET' && req.method !== 'POST') {
     res.setHeader('Content-Type', 'application/json');
     return res.status(405).json({ message: 'Method not allowed' });
   }
@@ -72,6 +80,39 @@ export default async function handler(req, res) {
   if (!cfg) {
     res.setHeader('Content-Type', 'application/json');
     return res.status(500).json({ message: 'Storage not configured.' });
+  }
+
+  // ---------- direct set (POST, whole brief in one request) ----------
+  if (req.method === 'POST') {
+    res.setHeader('Content-Type', 'application/json');
+    if (!checkAuth(req)) return res.status(401).json({ message: 'Unauthorized' });
+
+    const html = typeof req.body === 'string' ? req.body
+      : Buffer.isBuffer(req.body) ? req.body.toString('utf-8')
+      : '';
+    if (!html) {
+      return res.status(400).json({ message: 'Request body must be the raw HTML (text/plain or text/html), non-empty.' });
+    }
+
+    const { summary, date, sourceArtifact } = req.query;
+    const meta = JSON.stringify({
+      summary: summary || '',
+      date: date || new Date().toISOString().slice(0, 10),
+      sourceArtifact: sourceArtifact || '',
+      length: html.length,
+      updatedAt: new Date().toISOString()
+    });
+
+    try {
+      await redisPipeline(cfg, [
+        ['SET', 'topk:latest:html', html, 'EX', String(TTL_SECONDS)],
+        ['SET', 'topk:latest:meta', meta, 'EX', String(TTL_SECONDS)]
+      ]);
+      return res.status(200).json({ ok: true, bytes: html.length });
+    } catch (err) {
+      console.error('Direct set error:', err);
+      return res.status(502).json({ message: 'Could not store brief.', detail: String(err) });
+    }
   }
 
   // ---------- chunk upload ----------

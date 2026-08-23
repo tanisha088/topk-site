@@ -112,19 +112,25 @@ In the Vercel dashboard:
 
 The landing page "See today's brief" link points to `/api/latest`, which now **serves the brief HTML directly** (no redirect) — this is necessary because Claude artifacts are private by default and would need manual re-sharing every day.
 
-The daily pipeline uploads the brief HTML via a **chunked GET-based transfer** (the pipeline environment can only make tool-mediated GET fetches, not raw outbound POSTs):
+The daily pipeline can upload the brief HTML in one of two ways:
 
-**1. Upload each chunk:**
+**Option A — Direct POST** (preferred, if the pipeline session has full network access):
 ```
+curl -X POST "https://your-domain.com/api/latest?token=YOUR_UPDATE_SECRET&summary=Today's+brief&date=2025-01-15&sourceArtifact=https://claude.ai/code/artifact/..." \
+  -H "Content-Type: text/html" \
+  --data-binary @brief.html
+```
+The raw HTML is stored directly as `topk:latest:html` (48h TTL) with metadata as `topk:latest:meta`.
+
+**Option B — Chunked GET** (fallback, for environments that can only make GET requests):
+```
+# 1. Upload each chunk
 curl "https://your-domain.com/api/latest?chunk=1&run=2025-01-15T07&idx=0&data=BASE64URL_ENCODED_DATA&token=YOUR_UPDATE_SECRET"
-```
-Each chunk appends base64url-encoded bytes to a pending upload list keyed by `run`. Chunks use base64url encoding so multi-byte UTF-8 characters split across boundaries still decode correctly.
 
-**2. Assemble and publish:**
+# 2. Assemble and publish
+curl "https://your-domain.com/api/latest?finish=1&run=2025-01-15T07&summary=Today's+brief&date=2025-01-15&sourceArtifact=https://claude.ai/code/artifact/...&token=YOUR_UPDATE_SECRET"
 ```
-curl "https://your-domain.com/api/latest?finish=1&run=2025-01-15T07&summary=Today's+brief+summary&date=2025-01-15&sourceArtifact=https://claude.ai/code/artifact/...&token=YOUR_UPDATE_SECRET"
-```
-This concatenates all chunks, decodes to HTML, stores as `topk:latest:html` (48h TTL) and metadata as `topk:latest:meta`, and clears the chunk buffer.
+Each chunk appends base64url-encoded bytes to a pending upload keyed by `run`. At finish, chunks are concatenated via `Buffer.concat` (correctly handling multi-byte UTF-8 chars split across boundaries), decoded to HTML, and stored.
 
 **Verify:**
 ```

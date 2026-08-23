@@ -65,7 +65,7 @@ topk-site/                    Vercel project (static + serverless)
   api/
     subscribe.js              POST /api/subscribe -> MailerLite
     count.js                  GET  /api/count -> subscriber count
-    latest.js                 GET /api/latest → serve brief HTML + chunked upload (GET-only)
+    latest.js                 GET/POST /api/latest → serve brief HTML + chunked/POST upload
     checkpoint.js             GET/POST /api/checkpoint → pipeline progress log (GET or POST)
 ```
 
