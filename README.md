@@ -4,7 +4,7 @@
 
 The name comes from top-k sampling: out of everything that happened in AI today, these are the k things that actually matter to what you're building.
 
-Live at **[topk-site.vercel.app](https://topk-site.vercel.app)** (or your custom domain)
+Live at **[topk-site.vercel.app](https://topk-site.vercel.app)**
 
 ---
 
@@ -33,8 +33,8 @@ This is the part most daily-digest projects fake with a cron job and an RSS read
 07:00 IST  Scheduled task fires (fresh session, no memory of prior runs)
    │
    ├─ 1. GATHER      5 parallel research agents sweep 40+ sources
-   │                  (consolidators, changelogs, leaderboards, analysts,
-   │                   community/research), each returning a compact digest
+   │                 (consolidators, changelogs, leaderboards, analysts,
+   │                  community/research), each returning a compact digest
    │
    ├─ 2. SYNTHESIZE   Headlines + deep-dives assembled from the digests,
    │                  weighted toward changelog/pricing/leaderboard signal,
@@ -108,11 +108,11 @@ topk-site/                    Vercel project (static + serverless)
     subscribe.js               POST /api/subscribe -> MailerLite
     count.js                    GET  /api/count -> subscriber count
     latest.js                   GET  /api/latest -> serves the live brief
-                                 POST /api/latest -> direct one-shot upload
-                                 GET  /api/latest?chunk=1 / ?finish=1 -> chunked upload fallback
-                                 GET  /api/latest?peek=1 -> metadata only, for verification
+                                  POST /api/latest -> direct one-shot upload
+                                  GET  /api/latest?chunk=1 / ?finish=1 -> chunked upload fallback
+                                  GET  /api/latest?peek=1 -> metadata only, for verification
     checkpoint.js               GET  /api/checkpoint -> pipeline run history
-                                 GET  /api/checkpoint?phase=... -> write a checkpoint
+                                  GET  /api/checkpoint?phase=... -> write a checkpoint
 ```
 
 ### External services
