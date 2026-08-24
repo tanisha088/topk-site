@@ -87,7 +87,7 @@ ${corpus.slice(0, 220000)}`;
   writeFileSync(tmpFile, prompt, 'utf8');
 
   const proc = spawn('npx', ['@anthropic-ai/claude-code', '-p'], {
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
     env: { ...process.env },
   });
