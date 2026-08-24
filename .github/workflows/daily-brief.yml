@@ -1,0 +1,49 @@
+name: Top-K daily brief
+
+on:
+  schedule:
+    # 01:30 UTC = 07:00 IST. GitHub cron is best-effort and can lag
+    # under load, so treat the delivery time as "around 7am", not exact.
+    - cron: '30 1 * * *'
+  workflow_dispatch:
+    inputs:
+      skip_email:
+        description: 'Publish the brief but do not send the campaign'
+        type: boolean
+        default: false
+
+concurrency:
+  group: topk-daily
+  cancel-in-progress: false
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build and publish the brief
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL:   ${{ vars.ANTHROPIC_MODEL }}
+          UPDATE_SECRET:     ${{ secrets.UPDATE_SECRET }}
+          MAILERLITE_API_KEY: ${{ secrets.MAILERLITE_API_KEY }}
+          MAILERLITE_GROUP_ID: ${{ vars.MAILERLITE_GROUP_ID }}
+          SITE_BASE:         ${{ vars.SITE_BASE }}
+          FROM_EMAIL:        ${{ vars.FROM_EMAIL }}
+          SKIP_EMAIL:        ${{ inputs.skip_email }}
+        run: node scripts/run.mjs
+
+      - name: Upload brief artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brief-${{ github.run_id }}
+          path: out/
+          if-no-files-found: ignore
+          retention-days: 14
