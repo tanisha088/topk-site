@@ -6,7 +6,7 @@ export async function publishBrief(html, { siteBase, secret, isoDate, summary })
   const qs = new URLSearchParams({ token: secret, date: isoDate, summary: summary || '' });
   const res = await fetch(`${siteBase}/api/latest?${qs}`, {
     method: 'POST',
-    headers: { 'content-type': 'text/html; charset=utf-8' },
+    headers: { 'content-type': 'text/plain; charset=utf-8' },
     body: html,
   });
   const body = await res.text();
