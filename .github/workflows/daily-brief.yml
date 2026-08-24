@@ -1,5 +1,10 @@
 name: Top-K daily brief
 
+# This workflow uses the Anthropic API (requires ANTHROPIC_API_KEY secret).
+# If you have a Claude Code Pro subscription instead, use scripts/run-local.mjs
+# on your machine (it invokes `npx @anthropic-ai/claude-code -p`). See
+# DEPLOY.md > Step 5b — Local runner alternative.
+
 on:
   schedule:
     # 01:30 UTC = 07:00 IST. GitHub cron is best-effort and can lag

@@ -175,7 +175,39 @@ The `/api/checkpoint` endpoint lets the daily pipeline report and retrieve progr
 
 ---
 
-## Later: Sending the daily brief via MailerLite
+## Step 5b — Local runner alternative (Claude Code Pro)
+
+If you have a **Claude Code Pro** subscription (no Anthropic API key), you can run the pipeline locally instead of via GitHub Actions:
+
+1. **Install prerequisites:**
+   - Node.js 20+ (for the pipeline scripts)
+   - Claude Code CLI: `npm install -g @anthropic-ai/claude-code` (or use `npx @anthropic-ai/claude-code`)
+   - Log in: `claude` → authenticate with your Pro subscription
+
+2. **Set environment variables** in your shell:
+   ```bash
+   export UPDATE_SECRET="your-update-secret"        # same as Vercel
+   export MAILERLITE_API_KEY="your-mailerlite-key"
+   export MAILERLITE_GROUP_ID="196497502048879775"
+   export SITE_BASE="https://topk-site.vercel.app"  # or your custom domain
+   export FROM_EMAIL="tanisharas@gmail.com"
+   ```
+
+3. **Run the pipeline:**
+   ```bash
+   # Test run: publish brief but skip email
+   cd topk-site
+   node scripts/run-local.mjs --skip-email
+
+   # Full run: publish + send campaign
+   node scripts/run-local.mjs
+   ```
+
+4. **Schedule it** (Windows Task Scheduler / cron):
+   - Trigger: daily at 06:45 local time (runs ~15 min before 7am IST)
+   - Action: `node scripts/run-local.mjs` (from the topk-site directory)
+
+The local runner (`run-local.mjs`) is identical to the GitHub Actions version, except it invokes `claude -p` for synthesis instead of calling the Anthropic API. Your Claude Code Pro subscription pays for the synthesis call; everything else (fetch, render, publish, email) uses standard HTTPS.
 
 Once the subscriber list is building, connect the MailerLite MCP connector
 in your Claude settings (claude.ai → Settings → Connectors → search "MailerLite").
