@@ -100,13 +100,13 @@ ${corpus.slice(0, 220000)}`;
   let stdout = '';
   let stderr = '';
   proc.stdout.on('data', (d) => (stdout += d));
-  proc.stderr.on('data', (d) => (stderr += d));
+  proc.stderr.on('data', (d) => { stderr += d; process.stderr.write(d); });
 
   const code = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       proc.kill();
-      reject(new Error('Claude Code CLI timed out after 180s'));
-    }, 180000);
+      reject(new Error('Claude Code CLI timed out after 300s'));
+    }, 300000);
     proc.on('close', (c) => { clearTimeout(timer); resolve(c); });
     proc.on('error', (err) => { clearTimeout(timer); reject(err); });
   });
