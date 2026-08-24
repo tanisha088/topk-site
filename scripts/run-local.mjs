@@ -4,10 +4,14 @@
 //
 // Run with:  node scripts/run-local.mjs [--skip-email]
 //
-// Requires:  Node 20+, claude code CLI auth (logged in via `claude`)
+// Requires:  Node 20+, claude code CLI auth (logged in via `claude /login`)
+// IMPORTANT: Do not set ANTHROPIC_API_KEY in the environment — Claude Code Pro
+// uses OAuth. A stale API key with no credits will override OAuth auth.
 
-import { mkdir, writeFile } from 'node:fs/promises';
-import { execSync } from 'node:child_process';
+import { mkdir, writeFile, writeFileSync, unlinkSync, createReadStream } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { gather } from './fetch-sources.mjs';
 import { renderPage, renderEmail } from './render.mjs';
 import { publishBrief, verifyPublished, sendCampaign } from './publish.mjs';
@@ -78,18 +82,40 @@ MATERIAL:
 ${corpus.slice(0, 220000)}`;
 
   console.log('[synthesize] invoking Claude Code CLI...');
-  let text;
-  try {
-    text = execSync('npx @anthropic-ai/claude-code -p', {
-      input: prompt,
-      encoding: 'utf8',
-      maxBuffer: 10 * 1024 * 1024,
-      windowsHide: true,
-      timeout: 120000,
-    });
-  } catch (err) {
-    throw new Error(`Claude Code CLI failed: ${err.message.slice(0, 500)}`);
+
+  const tmpFile = join(tmpdir(), `topk-prompt-${Date.now()}.txt`);
+  writeFileSync(tmpFile, prompt, 'utf8');
+
+  const proc = spawn('npx', ['@anthropic-ai/claude-code', '-p'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+    env: { ...process.env },
+  });
+
+  const stdinStream = createReadStream(tmpFile);
+  stdinStream.pipe(proc.stdin);
+
+  let stdout = '';
+  let stderr = '';
+  proc.stdout.on('data', (d) => (stdout += d));
+  proc.stderr.on('data', (d) => (stderr += d));
+
+  const code = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      proc.kill();
+      reject(new Error('Claude Code CLI timed out after 180s'));
+    }, 180000);
+    proc.on('close', (c) => { clearTimeout(timer); resolve(c); });
+    proc.on('error', (err) => { clearTimeout(timer); reject(err); });
+  });
+
+  unlinkSync(tmpFile);
+
+  if (code !== 0) {
+    throw new Error(`Claude Code CLI failed (exit ${code}): ${stderr.slice(0, 500)}`);
   }
+
+  const text = stdout.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
 
   const jsonText = text.replace(/^\s*```(?:json)?/i, '').replace(/```\s*$/, '').trim();
   let brief;
