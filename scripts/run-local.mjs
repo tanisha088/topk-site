@@ -8,7 +8,8 @@
 // IMPORTANT: Do not set ANTHROPIC_API_KEY in the environment — Claude Code Pro
 // uses OAuth. A stale API key with no credits will override OAuth auth.
 
-import { mkdir, writeFile, writeFileSync, unlinkSync, createReadStream } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { writeFileSync, unlinkSync, createReadStream } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
