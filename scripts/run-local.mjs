@@ -89,6 +89,7 @@ ${corpus.slice(0, 220000)}`;
   const proc = spawn('npx', ['@anthropic-ai/claude-code', '-p'], {
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true,
+    shell: true,
     env: { ...process.env },
   });
 
